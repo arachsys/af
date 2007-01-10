@@ -1,0 +1,101 @@
+#!/bin/perl -w
+
+use CDB_File;
+use File::Basename;
+use Getopt::Std;
+use Mail::Address;
+use Mail::Header;
+use strict;
+
+my $domainatom = qr/(?i:[a-z0-9](?:[a-z0-9-]*[a-z0-9]|))/i;
+my $domainpattern = qr/$domainatom(?:\.$domainatom)*/;
+
+sub scandir($) {
+  my $dir = shift;
+  opendir DIR, $dir or return;
+  my @files;
+  while (defined (my $file = readdir DIR)) {
+    next if substr($file, 0, 1) eq '.';
+    push @files, "$dir/$file";
+  }
+  return @files;
+}
+
+sub scanmaildir($) {
+  my $dir = shift;
+  return scandir("$dir/cur"), scandir("$dir/new");
+}
+
+sub usage() {
+  print STDERR <<EOF;
+Usage:  af-list [-h TAG[,TAG]...] [-m MAXAGE] [-i LISTFILE] [-x LISTFILE]
+                [-c CDBFILE] [-o TEXTFILE] [MAILDIR]...
+Options:
+  -h TAG[,TAG]...  extract addresses from header lines with the specified
+                   tags; by default From: and Sender: headers are used
+  -m MAXAGE        only use messages with mtimes newer than MAXAGE days
+  -i LISTFILE      include additional addresses from LISTFILE
+  -x LISTFILE      remove any addresses matching those in LISTFILE
+  -c CDBFILE       create a CDB hash file containing the address list
+  -o LISTFILE      create a plain text file containing the address list
+EOF
+  exit 1;
+}
+                          
+sub HELP_MESSAGE { usage; }
+sub VERSION_MESSAGE { usage; }
+
+$0 = basename $0;
+usage unless @ARGV > 0;
+my %option = ();
+getopts "h:m:i:x:c:o:", \%option or usage;
+
+$SIG{__DIE__} = sub { die "$0: $_[0]"; };
+
+my @address_tags = $option{h} ? split /,/, $option{h} : qw(from sender);
+my ($maxage, $cdbfile, $listfile, %addresses);
+$maxage = 86400*$option{m} if $option{m} and $option{m} =~ /^\d+$/;
+$cdbfile = $option{c} if $option{c};
+$listfile = $option{o} if $option{o};
+
+if ($option{i} and open INCLUDE, "< $option{i}") {
+  while (my $address = <INCLUDE>) {
+    chomp $address;
+    $addresses{lc $address}++;
+  }
+  close INCLUDE;
+}
+
+foreach my $maildir (@ARGV) {
+  foreach my $file (scanmaildir $maildir) {
+    next if $maxage and time >= (stat $file)[9] + $maxage;
+    open MESSAGE, "< $file" or next;
+    my $headers = new Mail::Header \*MESSAGE;
+    foreach my $tag (@address_tags) {
+      foreach my $header ($headers->get($tag)) {
+        foreach my $address (Mail::Address->parse($header)) {
+          next unless $address->address =~ /\@$domainpattern$/i;
+          $addresses{lc $address->address}++;
+        }
+      }
+    }
+    close MESSAGE;
+  }
+}
+
+if ($option{x} and open EXCLUDE, "< $option{x}") {
+  while (my $address = <EXCLUDE>) {
+    chomp $address;
+    delete $addresses{lc $address};
+  }
+  close EXCLUDE;
+}
+
+CDB_File::create %addresses, $cdbfile, "$cdbfile.tmp" if defined $cdbfile;
+
+if ($option{o} or not $option{c}) {
+  open (LISTFILE, "> $option{o}") and select LISTFILE if $option{o};
+  foreach my $address (sort keys %addresses) {
+    print "$address\n"
+  }
+}

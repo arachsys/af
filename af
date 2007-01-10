@@ -1,0 +1,293 @@
+#!/bin/lua
+
+require "osbf"
+
+function shuffle(a)
+  math.randomseed(os.time())
+  local n = table.getn(a)
+  for i = 1, n - 1 do
+    j = math.random(i, n)
+    a[i], a[j] = a[j], a[i]
+  end
+end
+
+function scandir(messages, dir, class)
+  local success, iterator = pcall(osbf.dir, dir)
+  if not success then
+    io.stderr:write(arg[0], ": Unable to access '", dir, "'\n")
+    os.exit(1)
+  end
+  for leaf in iterator do
+    if string.sub(leaf, 1, 1) ~= "." then
+      table.insert(messages, { file = dir .. "/" .. leaf, class = class })
+    end
+  end
+end
+
+function scanmaildir(messages, dir, class)
+  scandir(messages, dir .. "/cur", class)
+  scandir(messages, dir .. "/new", class)
+end
+
+function checkcfc(file)
+  local cfc = io.open(file)
+  if cfc then
+    cfc:close()
+  else
+    local success, errmsg = osbf.create_db({file}, config.buckets)
+    if not success then
+      io.stderr:write(arg[0], ": ", errmsg, "\n")
+      os.exit(1)
+    end
+  end
+end
+
+function getclasses()
+  local i = 2
+  while arg[i] ~= nil do
+    if arg[i + 1] == nil then usage() end
+    table.insert(dbset.classes, arg[i])
+    table.insert(maildirs, arg[i + 1])
+    i = i + 2
+  end
+  if table.getn(dbset.classes) == 0 then usage() end
+  for j = 2, table.getn(dbset.classes) do
+    for i = 1, j - 1 do
+      if dbset.classes[i] == dbset.classes[j] then
+        io.stderr:write(arg[0], ": Repeated class '", dbset.classes[i],
+                        "' is not allowed\n")
+        os.exit(1)
+      end
+    end
+  end
+  for class = 1, table.getn(dbset.classes) do
+    checkcfc(dbset.classes[class])
+  end
+end
+
+function getoptions()
+  local i = 1
+  while arg[i] ~= nil do
+    if arg[i] == "-b" then
+      if arg[i + 1] == nil then usage() end
+      local buckets = tonumber(arg[i + 1])
+      if not buckets then
+        io.stderr:write(arg[0], ": Invalid bucket count '", arg[i + 1], "'\n")
+        os.exit(1)
+      end
+      config.buckets = buckets
+      table.remove(arg, i + 1)
+      table.remove(arg, i)
+    elseif arg[i] == "-d" then
+      config.delete = true
+      table.remove(arg, i)
+    elseif arg[i] == "-l" then
+      if arg[i + 1] == nil then usage() end
+      local limit = tonumber(arg[i + 1])
+      if not limit then
+        io.stderr:write(arg[0], ": Invalid message limit '", arg[i + 1], "'\n")
+        os.exit(1)
+      end
+      config.limit = limit
+      table.remove(arg, i + 1)
+      table.remove(arg, i)
+    elseif arg[i] == "-n" then
+      config.dummy = true
+      table.remove(arg, i)
+    elseif arg[i] == "-r" then
+      if arg[i + 1] == nil then usage() end
+      config.retraindir = arg[i + 1]
+      table.remove(arg, i + 1)
+      table.remove(arg, i)
+    elseif arg[i] == "-t" then
+      if arg[i + 1] == nil then usage() end
+      local threshold = tonumber(arg[i + 1])
+      if not threshold then
+        io.stderr:write(arg[0], ": Invalid pR threshold '", arg[i + 1], "'\n")
+        os.exit(1)
+      end
+      config.threshold = threshold
+      table.remove(arg, i + 1)
+      table.remove(arg, i)
+    elseif arg[i] == "-v" then
+      config.verbose = true
+      table.remove(arg, i)
+    elseif arg[i] == "-w" then
+      if arg[i + 1] == nil then usage() end
+      local window = tonumber(arg[i + 1])
+      if not window then
+        io.stderr:write(arg[0], ": Invalid window size '", arg[i + 1], "'\n")
+        os.exit(1)
+      end
+      config.window = window
+      table.remove(arg, i + 1)
+      table.remove(arg, i)
+    else
+      i = i + 1
+    end
+  end
+end
+
+function usage()
+  io.stderr:write(
+    "Usage: ", arg[0], " classify CFC1 BOX1 [CFC2 BOX2]...\n",
+    "       ", arg[0], " train CFC1 BOX1 [CFC2 BOX2]...\n",
+    "       ", arg[0], " import DSTCFC SRCCFC\n",
+    "       ", arg[0], " stats CFC\n",
+    "       ", arg[0], " dump CFC >CSV\n",
+    "       ", arg[0], " restore CFC <CSV\n",
+    "Options:\n",
+    "  -b BUCKETS     create filters with specified number of buckets\n",
+    "  -d             delete messages from maildirs after training\n",
+    "  -l LIMIT       limit training to a maximum of LIMIT messages\n",
+    "  -n             count errors but do not really train the filters\n",
+    "  -r RETRAINBOX  also classify messages into RETRAINBOX if pR is\n",
+    "                 smaller than the reinforcement threshold\n",
+    "  -t THRESHOLD   set pR threshold for reinforcement to THRESHOLD\n",
+    "  -v             print pR for each message during training\n",
+    "  -w WINDOW      consider at most WINDOW bytes from messages\n")
+  os.exit(1)
+end
+
+
+config = {
+  buckets = 94321,
+  delete = false,
+  dummy = false,
+  limit = nil,
+  retraindir = "",
+  threshold = 10.0,
+  verbose = false,
+  window = 524288
+}
+
+dbset = {
+  classes = {},
+  ncfs = 1,
+  delimiters = ""
+}
+
+maildirs = {}
+
+arg[0] = string.gsub(arg[0], "^.*/", "", 1)
+getoptions()
+
+if arg[1] == "classify" then
+  getclasses()
+  local text = io.read(config.window)
+  if text == nil or text == "" then os.exit(0) end
+
+  local pR, ps, imax = osbf.classify(text, dbset, 2)
+  if pR == nil then
+    io.stderr:write(arg[0], ": ", ps, "\n")
+    os.exit(1)
+  end
+  pR = math.log(ps[imax]/(1 - ps[imax]))
+
+  if maildirs[imax] ~= "" and maildirs[imax] ~= "-" then
+    io.write(maildirs[imax], "\n")
+  end
+  if pR < config.threshold and config.retraindir ~= maildirs[imax]
+     and config.retraindir ~= "" and config.retraindir ~= "-" then
+    io.write(config.retraindir, "\n")
+  end
+
+elseif arg[1] == "train" then
+  getclasses()
+  local messages = {}
+  for class = 1, table.getn(dbset.classes) do
+    if maildirs[class] ~= "" and maildirs[class] ~= "-" then
+      scanmaildir(messages, maildirs[class], class)
+    end
+  end
+  shuffle(messages)
+
+  local msgcount, corrections, reinforcements = 0, 0, 0
+  for i = 1, table.getn(messages) do
+    if config.limit and msgcount >= config.limit then break end
+    local message = io.open(messages[i].file, "r")
+    if message ~= nil then
+      local text = message:read(config.window)
+      if text ~= nil and text ~= "" then
+        local pR, ps, imax = osbf.classify(text, dbset, 2)
+        if pR == nil then
+          io.stderr:write(arg[0], ": Error processing '", messages[i].file,
+                          "'\n", arg[0], ": ", ps, "\n")
+        else
+          if config.verbose then
+            local class = messages[i].class
+            local pR = math.log10(ps[class]/(1 - ps[class]))
+            io.write(messages[i].file, " ", pR, "\n")
+          end
+          pR = math.log10(ps[imax]/(1 - ps[imax]))
+          if imax ~= messages[i].class then
+            if not config.dummy then
+              osbf.learn(text, dbset, messages[i].class, 2)
+            end
+            corrections = corrections + 1
+          elseif pR < config.threshold then
+            if not config.dummy then
+              osbf.learn(text, dbset, messages[i].class, 4)
+            end
+            reinforcements = reinforcements + 1
+          end
+          if config.delete and not config.dummy then
+            os.remove(messages[i].file)
+          end
+        end
+      end
+      message:close()
+      msgcount = msgcount + 1
+    end
+  end
+
+  io.stderr:write("Messages: ", msgcount, "\n",
+                  "Corrections: ", corrections, "\n",
+                  "Reinforcements: ", reinforcements, "\n")
+
+elseif arg[1] == "import" then
+  if arg[2] == nil or arg[3] == nil or arg[4] ~= nil then usage() end
+  checkcfc(arg[2])
+  success, errmsg = osbf.import(arg[2], arg[3])
+  if not success then
+    io.stderr:write(arg[0], ": ", errmsg, "\n")
+    os.exit(1)
+  end
+
+elseif arg[1] == "stats" then
+  if arg[2] == nil then usage() end
+  for i = 2, table.getn(arg) do
+    local stats, errmsg = osbf.stats(arg[i], true)
+    if stats == nil then
+      io.stderr:write(arg[0], ": Unable to get stats for class file '",
+                      arg[i], "'\n", arg[0], ": ", errmsg, "\n")
+      os.exit(1)
+    end
+
+    io.write("Stats for class file '", arg[i], "':\n")
+    for k, v in pairs(stats) do
+      io.write("  ", k, " = ", v, "\n")
+    end
+  end
+
+elseif arg[1] == "dump" then
+  if arg[2] == nil or arg[3] ~= nil then usage() end
+  success, errmsg = osbf.dump(arg[2], "/dev/stdout")
+  if not success then
+    io.stderr:write(arg[0], ": ", errmsg, "\n")
+    os.exit(1)
+  end
+
+elseif arg[1] == "restore" then
+  if arg[2] == nil or arg[3] ~= nil then usage() end
+  success, errmsg = osbf.restore(arg[2], "/dev/stdin")
+  if not success then
+    io.stderr:write(arg[0], ": ", errmsg, "\n")
+    os.exit(1)
+  end
+
+else
+  usage()
+end
+
+os.exit(0)

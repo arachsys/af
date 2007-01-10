@@ -1,0 +1,21 @@
+#!/bin/bash
+
+AFDIR="${AFDIR:-~/.af}"
+export AFDIR
+
+umask 0077
+mkdir -p "$AFDIR"/{tmp,new}
+MESSAGE="$AFDIR"/new/`safecat "$AFDIR"/{tmp,new}`
+[ $? -eq 0 ] || exit 73
+
+MAILDIRS=`af classify "$@" <"$MESSAGE" 2>/dev/null`
+[ $? -eq 0 ] || exit 75
+
+if [ "$MAILDIRS" != "" ]; then
+  echo "$MAILDIRS" | while read MAILDIR; do
+    mkdir -p "$MAILDIR"/{tmp,new,cur} >/dev/null 2>&1 || exit 73
+    safecat "$MAILDIR"/{tmp,new} <"$MESSAGE" >/dev/null 2>&1 || exit 73
+  done
+  [ $? -eq 0 ] || exit 73
+  unlink "$MESSAGE"
+fi  
