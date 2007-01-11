@@ -184,20 +184,30 @@ if arg[1] == "classify" then
   end
   pR = math.log(ps[imax]/(1 - ps[imax]))
 
-  if maildirs[imax] ~= "" and maildirs[imax] ~= "-" then
-    io.write(maildirs[imax], "\n")
+  local classification = {}
+  if maildirs[imax] ~= "-" then
+    for maildir in string.gmatch(maildirs[imax], "[^:]+") do
+      classification[maildir] = true
+    end
   end
-  if pR < config.threshold and config.retraindir ~= maildirs[imax]
-     and config.retraindir ~= "" and config.retraindir ~= "-" then
-    io.write(config.retraindir, "\n")
+  if pR < config.threshold and config.retraindir ~= "-" then
+    for maildir in string.gmatch(config.retraindir, "[^:]+") do
+      classification[maildir] = true
+    end
+  end
+
+  for maildir in pairs(classification) do
+    io.write(maildir, "\n")
   end
 
 elseif arg[1] == "train" then
   getclasses()
   local messages = {}
   for class = 1, table.getn(dbset.classes) do
-    if maildirs[class] ~= "" and maildirs[class] ~= "-" then
-      scanmaildir(messages, maildirs[class], class)
+    if maildirs[class] ~= "-" then
+      for maildir in string.gmatch(maildirs[class], "[^:]+") do
+        scanmaildir(messages, maildir, class)
+      end
     end
   end
   shuffle(messages)

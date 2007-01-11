@@ -53,17 +53,25 @@ getopts "h:m:i:x:c:o:", \%option or usage;
 $SIG{__DIE__} = sub { die "$0: $_[0]"; };
 
 my @address_tags = $option{h} ? split /,/, $option{h} : qw(from sender);
-my ($maxage, $cdbfile, $listfile, %addresses);
+my ($maxage, $cdbfile, $listfile, %addresses, %exclude);
 $maxage = 86400*$option{m} if $option{m} and $option{m} =~ /^\d+$/;
 $cdbfile = $option{c} if $option{c};
 $listfile = $option{o} if $option{o};
 
 if ($option{i} and open INCLUDE, "< $option{i}") {
-  while (my $address = <INCLUDE>) {
+  while (my $address = lc <INCLUDE>) {
     chomp $address;
-    $addresses{lc $address}++;
+    $addresses{$address}++;
   }
   close INCLUDE;
+}
+
+if ($option{x} and open EXCLUDE, "< $option{x}") {
+  while (my $address = lc <EXCLUDE>) {
+    chomp $address;
+    $exclude{$address}++;
+  }
+  close EXCLUDE;
 }
 
 foreach my $maildir (@ARGV) {
@@ -73,22 +81,16 @@ foreach my $maildir (@ARGV) {
     my $headers = new Mail::Header \*MESSAGE;
     foreach my $tag (@address_tags) {
       foreach my $header ($headers->get($tag)) {
-        foreach my $address (Mail::Address->parse($header)) {
-          next unless $address->address =~ /\@$domainpattern$/i;
-          $addresses{lc $address->address}++;
+        foreach (Mail::Address->parse($header)) {
+          my $address = lc $_->address;
+          next unless $address =~ /\@($domainpattern)$/;
+          next if $exclude{$address} or $exclude{"*\@$1"};
+          $addresses{$address}++;
         }
       }
     }
     close MESSAGE;
   }
-}
-
-if ($option{x} and open EXCLUDE, "< $option{x}") {
-  while (my $address = <EXCLUDE>) {
-    chomp $address;
-    delete $addresses{lc $address};
-  }
-  close EXCLUDE;
 }
 
 CDB_File::create %addresses, $cdbfile, "$cdbfile.tmp" if defined $cdbfile;
