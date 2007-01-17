@@ -18,4 +18,4 @@ if [ "$MAILDIRS" != "" ]; then
   done
   [ $? -eq 0 ] || exit 73
   unlink "$MESSAGE"
-fi  
+fi

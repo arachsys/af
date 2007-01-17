@@ -41,7 +41,7 @@ Options:
 EOF
   exit 1;
 }
-                          
+
 sub HELP_MESSAGE { usage; }
 sub VERSION_MESSAGE { usage; }
 
