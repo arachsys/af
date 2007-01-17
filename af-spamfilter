@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 AFDIR="${AFDIR:-$HOME/.af}"
 WHITELIST="${WHITELIST:-$AFDIR/whitelist.cdb}"
