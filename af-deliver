@@ -3,7 +3,7 @@
 AFDIR="${AFDIR:-$HOME/.af}"
 
 umask 0077
-mkdir -p "$AFDIR"/{tmp,new}
+mkdir -p "$AFDIR"/{tmp,new} >/dev/null 2>&1
 MESSAGE="$AFDIR"/new/`safecat "$AFDIR"/{tmp,new}`
 [ $? -eq 0 ] || exit 73
 

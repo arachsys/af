@@ -11,8 +11,14 @@ SPAMDIR="${SPAMDIR:-$HOME/Maildir/.spam}"
 RETRAINDIR="${RETRAINDIR:-$HOME/Maildir/.af.retrain}"
 
 umask 0077
-mkdir -p "$AFDIR"/{tmp,new}
-MESSAGE="$AFDIR"/new/`safecat "$AFDIR"/{tmp,new}`
+if [ -n "$UNFILTERED" ]; then
+  mkdir -p "$UNFILTERED"/{tmp,new,cur} >/dev/null 2>&1 || exit 73
+  MESSAGE="$UNFILTERED"/new/`safecat "$UNFILTERED"/{tmp,new}`
+else
+  mkdir -p "$AFDIR"/{tmp,new} >/dev/null 2>&1 || exit 73
+  MESSAGE="$AFDIR"/new/`safecat "$AFDIR"/{tmp,new}`
+fi
+
 [ $? -eq 0 ] || exit 73
 
 if [ -f "$WHITELIST" ] || [ -f "$BLACKLIST" ]; then
@@ -35,5 +41,5 @@ if [ "$MAILDIRS" != "" ]; then
     safecat "$MAILDIR"/{tmp,new} <"$MESSAGE" >/dev/null 2>&1 || exit 73
   done
   [ $? -eq 0 ] || exit 73
-  unlink "$MESSAGE"
+  [ -n "$UNFILTERED" ] || unlink "$MESSAGE"
 fi
