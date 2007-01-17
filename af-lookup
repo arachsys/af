@@ -50,8 +50,6 @@ foreach my $cdb (@ARGV) {
     foreach my $address (@addresses) {
       $count++ if exists $cdb{$address};
     }
-  } else {
-    warn "CDB_File tie failed: $!\n";
   }
   push @counts, $count;
 }

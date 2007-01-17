@@ -1,0 +1,39 @@
+#!/bin/bash
+
+AFDIR="${AFDIR:-$HOME/.af}"
+WHITELIST="${WHITELIST:-$AFDIR/whitelist.cdb}"
+BLACKLIST="${BLACKLIST:-$AFDIR/blacklist.cdb}"
+HAMCFC="${HAMCFC:-$AFDIR/ham.cfc}"
+SPAMCFC="${SPAMCFC:-$AFDIR/spam.cfc}"
+
+HAMDIR="${HAMDIR:-$HOME/Maildir}"
+SPAMDIR="${SPAMDIR:-$HOME/Maildir/.spam}"
+RETRAINDIR="${RETRAINDIR:-$HOME/Maildir/.af.retrain}"
+
+umask 0077
+mkdir -p "$AFDIR"/{tmp,new}
+MESSAGE="$AFDIR"/new/`safecat "$AFDIR"/{tmp,new}`
+[ $? -eq 0 ] || exit 73
+
+if [ -f "$WHITELIST" ] || [ -f "$BLACKLIST" ]; then
+  set `af-lookup "$WHITELIST" "$BLACKLIST" <"$MESSAGE" 2>/dev/null`
+  [ $? -eq 0 ] || exit 75
+  if [ -n "$1" ] && [ "$1" != "0" ]; then
+    SPAMDIR="$HAMDIR:$RETRAINDIR"
+  elif [ -n "$2" ] && [ "$2" != "0" ]; then
+    HAMDIR="$SPAMDIR:$RETRAINDIR"
+  fi
+fi
+
+MAILDIRS=`af classify -r "$RETRAINDIR" "$HAMCFC" "$HAMDIR" \
+                      "$SPAMCFC" "$SPAMDIR" <"$MESSAGE" 2>/dev/null`
+[ $? -eq 0 ] || exit 75
+
+if [ "$MAILDIRS" != "" ]; then
+  echo "$MAILDIRS" | while read MAILDIR; do
+    mkdir -p "$MAILDIR"/{tmp,new,cur} >/dev/null 2>&1 || exit 73
+    safecat "$MAILDIR"/{tmp,new} <"$MESSAGE" >/dev/null 2>&1 || exit 73
+  done
+  [ $? -eq 0 ] || exit 73
+  unlink "$MESSAGE"
+fi

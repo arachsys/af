@@ -1,7 +1,6 @@
 #!/bin/bash
 
-AFDIR="${AFDIR:-~/.af}"
-export AFDIR
+AFDIR="${AFDIR:-$HOME/.af}"
 
 umask 0077
 mkdir -p "$AFDIR"/{tmp,new}
