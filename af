@@ -317,10 +317,10 @@ elseif arg[1] == "train" then
   io.stderr:write("Messages: ", stats.msgcount, "\n",
                   "Corrections: ", stats.corrections, "\n",
                   "Reinforcements: ", stats.reinforcements, "\n")
-  if config.trmax > 0 then
+  if not config.dummy and config.trmax > 0 then
     io.stderr:write("TR trainings: ", stats.trtotal, "\n")
   end
-  if config.hrmax > 0 then
+  if not config.dummy and config.hrmax > 0 then
     io.stderr:write("HR trainings: ", stats.hrtotal, "\n")
   end
 
