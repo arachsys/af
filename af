@@ -249,8 +249,8 @@ if arg[1] == "classify" then
   pR = math.log(ps[imax]/(1 - ps[imax]))
 
   local classification = {}
-  if maildirs[imax] ~= "-" then
-    for maildir in string.gmatch(maildirs[imax], "[^:]+") do
+  for maildir in string.gmatch(maildirs[imax], "[^:]+") do
+    if maildir ~= "-" then
       classification[maildir] = true
     end
   end
@@ -268,8 +268,8 @@ elseif arg[1] == "train" then
   getclasses()
   local messages = {}
   for class = 1, table.getn(dbset.classes) do
-    if maildirs[class] ~= "-" then
-      for maildir in string.gmatch(maildirs[class], "[^:]+") do
+    for maildir in string.gmatch(maildirs[class], "[^:]+") do
+      if maildir ~= "-" then
         scanmaildir(messages, maildir, class)
       end
     end
