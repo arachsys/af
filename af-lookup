@@ -35,13 +35,13 @@ my @address_tags = $option{h} ? split /,/, $option{h} : qw(from sender);
 my @addresses;
 my $headers = new Mail::Header \*STDIN;
 foreach my $tag (@address_tags) {
-    foreach my $header ($headers->get($tag)) {
-      foreach (Mail::Address->parse($header)) {
-        my $address = lc $_->address;
-        push @addresses, $address if $address =~ /\@($domainpattern)$/;
-      }
+  foreach my $header ($headers->get($tag)) {
+    foreach (Mail::Address->parse($header)) {
+      my $address = lc $_->address;
+      push @addresses, $address if $address =~ /\@($domainpattern)$/;
     }
   }
+}
 
 my @counts;
 foreach my $cdb (@ARGV) {
