@@ -60,7 +60,8 @@ $listfile = $option{o} if $option{o};
 
 if ($option{i} and open INCLUDE, "< $option{i}") {
   while (my $address = lc <INCLUDE>) {
-    chomp $address;
+    chomp $address; $address =~ s/^\s+//; $address =~ s/\.*\s*$//g;
+    next unless $address =~ /\@($domainpattern)$/;
     $addresses{$address}++;
   }
   close INCLUDE;
@@ -68,7 +69,8 @@ if ($option{i} and open INCLUDE, "< $option{i}") {
 
 if ($option{x} and open EXCLUDE, "< $option{x}") {
   while (my $address = lc <EXCLUDE>) {
-    chomp $address;
+    chomp $address; $address =~ s/^\s+//; $address =~ s/.*\s*$//g;
+    next unless $address =~ /\@($domainpattern)$/;
     $exclude{$address}++;
   }
   close EXCLUDE;
