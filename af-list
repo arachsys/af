@@ -69,7 +69,7 @@ if ($option{i} and open INCLUDE, "< $option{i}") {
 
 if ($option{x} and open EXCLUDE, "< $option{x}") {
   while (my $address = lc <EXCLUDE>) {
-    chomp $address; $address =~ s/^\s+//; $address =~ s/.*\s*$//g;
+    chomp $address; $address =~ s/^\s+//; $address =~ s/\.*\s*$//g;
     next unless $address =~ /\@($domainpattern)$/;
     $exclude{$address}++;
   }
