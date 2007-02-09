@@ -3,23 +3,23 @@
 AFDIR="${AFDIR:-$HOME/.af}"
 
 umask 0077
-if [ -n "$UNFILTERED" ]; then
-  mkdir -p "$UNFILTERED"/{tmp,new,cur} >/dev/null 2>&1 || exit 73
-  MESSAGE="$UNFILTERED"/new/`safecat "$UNFILTERED"/{tmp,new}`
-else
-  mkdir -p "$AFDIR"/{tmp,new} >/dev/null 2>&1 || exit 73
-  MESSAGE="$AFDIR"/new/`safecat "$AFDIR"/{tmp,new}`
-fi
+mkdir -p -- "$AFDIR"/{tmp,new} >/dev/null 2>&1 || exit 73
+MESSAGE="$AFDIR"/new/`safecat "$AFDIR"/{tmp,new}`
 [ $? -eq 0 ] || exit 73
+
+if [ -n "$UNFILTERED" ]; then
+  mkdir -p -- "$UNFILTERED"/{tmp,new,cur} >/dev/null 2>&1 || exit 73
+  safecat "$UNFILTERED"/{tmp,new} <"$MESSAGE" >/dev/null 2>&1 || exit 73
+fi
 
 MAILDIRS=`af classify "$@" <"$MESSAGE" 2>/dev/null`
 [ $? -eq 0 ] || exit 75
 
 if [ "$MAILDIRS" != "" ]; then
   echo "$MAILDIRS" | while read MAILDIR; do
-    mkdir -p "$MAILDIR"/{tmp,new,cur} >/dev/null 2>&1 || exit 73
+    mkdir -p -- "$MAILDIR"/{tmp,new,cur} >/dev/null 2>&1 || exit 73
     safecat "$MAILDIR"/{tmp,new} <"$MESSAGE" >/dev/null 2>&1 || exit 73
   done
   [ $? -eq 0 ] || exit 73
-  [ -n "$UNFILTERED" ] || unlink "$MESSAGE"
+  unlink "$MESSAGE"
 fi

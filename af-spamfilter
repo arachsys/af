@@ -1,45 +1,127 @@
-#!/bin/sh
+#!/bin/perl -w
 
-AFDIR="${AFDIR:-$HOME/.af}"
-WHITELIST="${WHITELIST:-$AFDIR/whitelist.cdb}"
-BLACKLIST="${BLACKLIST:-$AFDIR/blacklist.cdb}"
-HAMCFC="${HAMCFC:-$AFDIR/ham.cfc}"
-SPAMCFC="${SPAMCFC:-$AFDIR/spam.cfc}"
+use CDB_File;
+use File::Basename;
+use Getopt::Std;
+use Mail::Address;
+use Mail::Header;
+use strict;
 
-HAMDIR="${HAMDIR:-$HOME/Maildir}"
-SPAMDIR="${SPAMDIR:-$HOME/Maildir/.spam}"
-RETRAINDIR="${RETRAINDIR:-$HOME/Maildir/.af.retrain}"
+my $domainatom = qr/(?i:[a-z0-9](?:[a-z0-9-]*[a-z0-9]|))/i;
+my $domainpattern = qr/$domainatom(?:\.$domainatom)*/;
 
-umask 0077
-if [ -n "$UNFILTERED" ]; then
-  mkdir -p "$UNFILTERED"/{tmp,new,cur} >/dev/null 2>&1 || exit 73
-  MESSAGE="$UNFILTERED"/new/`safecat "$UNFILTERED"/{tmp,new}`
-else
-  mkdir -p "$AFDIR"/{tmp,new} >/dev/null 2>&1 || exit 73
-  MESSAGE="$AFDIR"/new/`safecat "$AFDIR"/{tmp,new}`
-fi
+sub receive($) {
+  my $maildir = shift;
+  system "mkdir -p -- $maildir/tmp $maildir/new";
+  exit 73 unless $? == 0;
+  my $message = `safecat $maildir/tmp $maildir/new`;
+  exit 73 unless $? == 0;
+  chomp $message;
+  return "$maildir/new/$message";
+}
 
-[ $? -eq 0 ] || exit 73
+sub deliver($$) {
+  my ($maildir, $source) = @_;
+  system "mkdir -p -- $maildir/tmp $maildir/new $maildir/cur";
+  return 1 unless $? == 0;
+  system "safecat $maildir/tmp $maildir/new <$source";
+  return $? == 0 ? 0 : 1;
+}
 
-if [ -f "$WHITELIST" ] || [ -f "$BLACKLIST" ]; then
-  set `af-lookup "$WHITELIST" "$BLACKLIST" <"$MESSAGE" 2>/dev/null`
-  [ $? -eq 0 ] || exit 75
-  if [ -n "$1" ] && [ "$1" != "0" ]; then
-    SPAMDIR="$HAMDIR:$RETRAINDIR"
-  elif [ -n "$2" ] && [ "$2" != "0" ]; then
-    HAMDIR="$SPAMDIR:$RETRAINDIR"
-  fi
-fi
+sub lookup($$$) {
+  my ($message, $blacklist, $whitelist) = @_;
+  my ($black, $white) = (0, 0);
+  my @address_tags = $ENV{HEADERS} ? split /[\s:,]+/, $ENV{HEADERS}
+                                   : qw(from sender);
+  my (%blacklist, %whitelist);
+  tie %blacklist, 'CDB_File', $blacklist;
+  tie %whitelist, 'CDB_File', $whitelist;
 
-MAILDIRS=`af classify -r "$RETRAINDIR" "$HAMCFC" "$HAMDIR" \
-                      "$SPAMCFC" "$SPAMDIR" <"$MESSAGE" 2>/dev/null`
-[ $? -eq 0 ] || exit 75
+  open MESSAGE, "< $message" or return 0;
+  my $headers = new Mail::Header \*MESSAGE;
+  foreach my $tag (@address_tags) {
+    foreach my $header ($headers->get($tag)) {
+      foreach (Mail::Address->parse($header)) {
+        my $address = lc $_->address;
+        next unless $address =~ /\@($domainpattern)$/;
+        $black++ if exists $blacklist{$address};
+        $white++ if exists $whitelist{$address};
+      }
+    }
+  }
+  close MESSAGE;
 
-if [ "$MAILDIRS" != "" ]; then
-  echo "$MAILDIRS" | while read MAILDIR; do
-    mkdir -p "$MAILDIR"/{tmp,new,cur} >/dev/null 2>&1 || exit 73
-    safecat "$MAILDIR"/{tmp,new} <"$MESSAGE" >/dev/null 2>&1 || exit 73
-  done
-  [ $? -eq 0 ] || exit 73
-  [ -n "$UNFILTERED" ] || unlink "$MESSAGE"
-fi
+  return 1 if $white > 0;
+  return -1 if $black > 0;
+  return 0;
+}
+
+sub usage() {
+  print STDERR <<'EOF';
+Usage:  af-spamfilter [-u] MAILDIR <MESSAGE
+Options:
+  -u               always copy all messages to the UNFILTERED maildir
+Environment:
+  AFDIR            af working directory; defaults to MAILDIR/af
+  BLACKLIST        address blacklist CDB; defaults to AFDIR/blacklist.cdb
+  HAMCFC           non-spam CFC file; defaults to AFDIR/ham.cfc
+  HAMDIR           deliver non-spam to this maildir; defaults to MAILDIR
+  HEADERS          comma separated list of header line tags to scan for
+                   addresses when checking the blacklist and whitelist; by
+                   default just From: and Sender: headers are used
+  RETRAINDIR       copy messages requiring reinforcement/retraining to
+                   this maildir; defaults to MAILDIR/.af.retrain
+  SPAMCFC          spam CFC file; defaults to AFDIR/spam.cfc
+  SPAMDIR          deliver spam to this maildir; default to MAILDIR/.spam
+  UNFILTERED       if -u option is set, messages are unconditionally copied
+                   to this maildir; defaults to MAILDIR/.unfiltered
+  WHITELIST        address whitelist CDB; defaults to AFDIR/whitelist.cdb
+EOF
+  exit 1;
+}
+
+sub HELP_MESSAGE { usage; }
+sub VERSION_MESSAGE { usage; }
+
+$0 = basename $0;
+my %option = ();
+getopts "u", \%option or usage;
+usage unless @ARGV == 1;
+
+my $maildir = $ARGV[0];
+my $afdir = $ENV{AFDIR} || "$maildir/af";
+my $blacklist = $ENV{BLACKLIST} || "$afdir/blacklist.cdb";
+my $hamcfc = $ENV{HAMCFC} || "$afdir/ham.cfc";
+my $hamdir = $ENV{HAMDIR} || $maildir;
+my $retraindir = $ENV{RETRAINDIR} || "$maildir/.af.retrain";
+my $spamcfc = $ENV{SPAMCFC} || "$afdir/spam.cfc";
+my $spamdir = $ENV{SPAMDIR} || "$maildir/.spam";
+my $unfiltered = $ENV{UNFILTERED} || "$maildir/.unfiltered";
+my $whitelist = $ENV{WHITELIST} || "$afdir/whitelist.cdb";
+
+$SIG{__DIE__} = sub { exit 75; };
+open STDOUT, ">/dev/null"; open STDERR, ">&STDOUT";
+umask 0077;
+
+my ($message, $errors) = (receive $afdir, 0);
+$errors += deliver $unfiltered, $message if $option{u};
+
+if (-f $blacklist || -f $whitelist) {
+  my $score = lookup $message, $blacklist, $whitelist;
+  if ($score > 0) {
+    $spamdir = "$hamdir:$retraindir";
+  } elsif ($score < 0) {
+    $hamdir = "$spamdir:$retraindir";
+  }
+}
+
+my $classifyspec = "-r $retraindir $hamcfc $hamdir $spamcfc $spamdir";
+open MAILDIRS, "af classify $classifyspec <$message |" or die;
+while (my $maildir = <MAILDIRS>) {
+  chomp $maildir;
+  $errors += deliver $maildir, $message;
+}
+close MAILDIRS;
+die unless $? == 0;
+
+unlink $message unless $errors > 0;
