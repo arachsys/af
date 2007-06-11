@@ -40,8 +40,8 @@ end
 function scandir(messages, dir, class)
   local success, iterator = pcall(osbf.dir, dir)
   if not success then
-    io.stderr:write(arg[0], ": Unable to access '", dir, "'\n")
-    os.exit(1)
+    io.stderr:write(arg[0], ": Warning: unable to access '", dir, "'\n")
+    return
   end
   for leaf in iterator do
     if string.sub(leaf, 1, 1) ~= "." then
