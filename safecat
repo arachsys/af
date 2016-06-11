@@ -1,0 +1,40 @@
+#!/bin/perl -w
+
+use File::Basename;
+use File::Copy;
+use IO::File;
+use Net::Domain;
+use Time::HiRes;
+use strict;
+
+$0 = basename $0;
+
+if (@ARGV != 2) {
+  print STDERR <<"EOF";
+Usage: $0 TMPDIR DSTDIR <MESSAGE
+EOF
+  exit 1;
+}
+
+my ($tmp, $dst) = @ARGV;
+my ($handle, $name);
+
+my $host = Net::Domain::hostfqdn();
+for (my $try = 0; $try < 10; $try++) {
+  my ($time, $micro) = Time::HiRes::gettimeofday();
+  $name = "${time}.M${micro}P$$.${host}";
+  $handle = IO::File->new("$tmp/$name", O_WRONLY | O_EXCL | O_CREAT);
+  last if defined $handle;
+}
+
+die "Failed to create temporary file" if not $handle;
+
+unlink "$tmp/$name" and die "Failed to write temporary file"
+  unless copy(*STDIN, $handle) and $handle->flush and $handle->sync;
+close $handle;
+
+unlink "$tmp/$name" and die "Failed to link temporary file into destination"
+  unless link "$tmp/$name", "$dst/$name";
+
+unlink "$tmp/$name";
+print "$name\n";
