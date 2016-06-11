@@ -4,7 +4,7 @@ require "osbf"
 
 function shuffle(a)
   math.randomseed(os.time())
-  local n = table.getn(a)
+  local n = #a
   for i = 1, n - 1 do
     j = math.random(i, n)
     a[i], a[j] = a[j], a[i]
@@ -76,8 +76,8 @@ function getclasses()
     table.insert(maildirs, arg[i + 1])
     i = i + 2
   end
-  if table.getn(dbset.classes) == 0 then usage() end
-  for j = 2, table.getn(dbset.classes) do
+  if #dbset.classes == 0 then usage() end
+  for j = 2, #dbset.classes do
     for i = 1, j - 1 do
       if dbset.classes[i] == dbset.classes[j] then
         io.stderr:write(arg[0], ": Repeated class '", dbset.classes[i],
@@ -86,7 +86,7 @@ function getclasses()
       end
     end
   end
-  for class = 1, table.getn(dbset.classes) do
+  for class = 1, #dbset.classes do
     checkcfc(dbset.classes[class])
   end
 end
@@ -267,7 +267,7 @@ if arg[1] == "classify" then
 elseif arg[1] == "train" then
   getclasses()
   local messages = {}
-  for class = 1, table.getn(dbset.classes) do
+  for class = 1, #dbset.classes do
     for maildir in string.gmatch(maildirs[class], "[^:]+") do
       if maildir ~= "-" then
         scanmaildir(messages, maildir, class)
@@ -276,7 +276,7 @@ elseif arg[1] == "train" then
   end
   shuffle(messages)
 
-  for i = 1, table.getn(messages) do
+  for i = 1, #messages do
     if config.limit and stats.msgcount >= config.limit then break end
     local message = io.open(messages[i].file, "r")
     if message ~= nil then
@@ -335,7 +335,7 @@ elseif arg[1] == "import" then
 
 elseif arg[1] == "stats" then
   if arg[2] == nil then usage() end
-  for i = 2, table.getn(arg) do
+  for i = 2, #arg do
     local stats, errmsg = osbf.stats(arg[i], true)
     if stats == nil then
       io.stderr:write(arg[0], ": Unable to get stats for class file '",
